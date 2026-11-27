@@ -66,6 +66,8 @@ import {
 } from "@/lib/pedidos-store";
 import { CheckCircle, Clock, Hanger, Hanger2, Tag, Tshirt } from "reicon-react";
 import {
+  ArrowDown,
+  Crown,
   Download,
   Eye,
   MoreVCircle,
@@ -86,24 +88,327 @@ const panel =
   "overflow-hidden bg-[#f6f8f7] ring-0 dark:bg-zinc-900 dark:ring-1 dark:ring-white/10";
 
 const avatarColors = [
-  "bg-rose-500/15 text-rose-600 dark:text-rose-400",
-  "bg-blue-500/15 text-blue-600 dark:text-blue-400",
-  "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
-  "bg-violet-500/15 text-violet-600 dark:text-violet-400",
-  "bg-amber-500/15 text-amber-600 dark:text-amber-400",
-  "bg-sky-500/15 text-sky-600 dark:text-sky-400",
+  {
+    avatar: "bg-rose-500/15 text-rose-600 dark:text-rose-400",
+    text: "text-rose-600 dark:text-rose-400",
+  },
+  {
+    avatar: "bg-blue-500/15 text-blue-600 dark:text-blue-400",
+    text: "text-blue-600 dark:text-blue-400",
+  },
+  {
+    avatar: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+    text: "text-emerald-600 dark:text-emerald-400",
+  },
+  {
+    avatar: "bg-violet-500/15 text-violet-600 dark:text-violet-400",
+    text: "text-violet-600 dark:text-violet-400",
+  },
+  {
+    avatar: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
+    text: "text-amber-600 dark:text-amber-400",
+  },
+  {
+    avatar: "bg-sky-500/15 text-sky-600 dark:text-sky-400",
+    text: "text-sky-600 dark:text-sky-400",
+  },
 ];
+
+function colorAvatar(usuario: string) {
+  let hash = 0;
+
+  for (const char of usuario.trim().toLowerCase()) {
+    hash = (hash * 31 + char.charCodeAt(0)) | 0;
+  }
+
+  return avatarColors[Math.abs(hash) % avatarColors.length];
+}
+
+const palabrasIgnoradas = new Set([
+  "hola",
+  "holaa",
+  "holi",
+  "buenas",
+  "buenos",
+  "dias",
+  "tardes",
+  "noches",
+  "como",
+  "estas",
+  "estan",
+  "que",
+  "quien",
+  "cual",
+  "cuando",
+  "donde",
+  "porque",
+  "por",
+  "para",
+  "con",
+  "sin",
+  "los",
+  "las",
+  "una",
+  "uno",
+  "unos",
+  "unas",
+  "del",
+  "al",
+  "el",
+  "la",
+  "de",
+  "en",
+  "mi",
+  "me",
+  "te",
+  "se",
+  "su",
+  "tu",
+  "yo",
+  "nosotros",
+  "nosotras",
+  "ustedes",
+  "ellos",
+  "ellas",
+  "este",
+  "esta",
+  "esto",
+  "estos",
+  "estas",
+  "ese",
+  "esa",
+  "eso",
+  "esos",
+  "esas",
+  "son",
+  "soy",
+  "eres",
+  "somos",
+  "estoy",
+  "estamos",
+  "tiene",
+  "tienen",
+  "tengo",
+  "hay",
+  "si",
+  "no",
+  "pero",
+  "mas",
+  "menos",
+  "muy",
+  "bien",
+  "mal",
+  "gracias",
+  "porfa",
+  "porfavor",
+  "favor",
+  "talla",
+  "tallas",
+  "precio",
+  "precios",
+  "cuanto",
+  "cuesta",
+  "sale",
+  "vale",
+  "queda",
+  "quedan",
+  "color",
+  "colores",
+  "modelo",
+  "modelos",
+  "conjunto",
+  "conjuntos",
+  "blazer",
+  "pantalon",
+  "pantalones",
+  "vestido",
+  "vestidos",
+  "casaca",
+  "chompa",
+  "polo",
+  "short",
+  "falda",
+  "enterizo",
+  "enterizos",
+  "stock",
+  "pedido",
+  "pedidos",
+  "informe",
+  "informes",
+  "info",
+  "whatsapp",
+  "wsp",
+  "numero",
+  "celular",
+  "delivery",
+  "envio",
+  "envios",
+  "pago",
+  "pagos",
+  "yape",
+  "plin",
+  "transferencia",
+  "tarjeta",
+  "efectivo",
+  "llevo",
+  "quiero",
+  "quisiera",
+  "necesito",
+  "busco",
+  "vende",
+  "venden",
+  "comprar",
+  "compra",
+  "compro",
+  "llevar",
+  "ultimo",
+  "ultima",
+  "ultimos",
+  "ultimas",
+  "primera",
+  "primero",
+  "segunda",
+  "segundo",
+  "tercera",
+  "tercero",
+  "jaja",
+  "jajaja",
+  "jajajaja",
+  "jsjs",
+  "sii",
+  "siii",
+  "noo",
+  "dale",
+  "oka",
+  "okay",
+  "ok",
+  "buen",
+  "buena",
+  "lindo",
+  "linda",
+  "bonito",
+  "bonita",
+  "hermoso",
+  "hermosa",
+  "calidad",
+  "grande",
+  "mediano",
+  "oferta",
+  "ofertas",
+  "rebaja",
+  "promo",
+  "promocion",
+  "sorteo",
+  "live",
+  "vivo",
+  "directo",
+  "dime",
+  "dame",
+  "manda",
+  "pasame",
+  "senor",
+  "senora",
+  "amigo",
+  "amiga",
+]);
+
+function normalizarTexto(texto: string) {
+  return texto
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function palabrasDeMensaje(texto: string) {
+  const limpio = normalizarTexto(texto)
+    .replace(/https?:\/\/\S+/g, " ")
+    .replace(/@[\p{L}\p{N}_.]+/gu, " ")
+    .replace(/\d{3,}/g, " ")
+    .replace(/[^\p{L}\s]/gu, " ");
+
+  return new Set(
+    limpio
+      .split(/\s+/)
+      .filter(
+        (palabra) =>
+          palabra.length >= 3 && !palabrasIgnoradas.has(palabra),
+      ),
+  );
+}
+
+type Corona = {
+  rank: number;
+  palabra: string;
+};
+
+const coronaEstilos: Record<number, string> = {
+  1: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
+  2: "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300",
+  3: "bg-orange-500/15 text-orange-700 dark:text-orange-400",
+};
+
+function calcularCoronas(mensajes: ChatMessage[]) {
+  const porPalabra = new Map<
+    string,
+    { usuarios: Set<string>; mensajes: { id: string; user: string }[] }
+  >();
+
+  for (const mensaje of mensajes) {
+    if (!extraerCodigo(mensaje.message)) continue;
+
+    const usuario = mensaje.user.trim().toLowerCase();
+
+    for (const palabra of palabrasDeMensaje(mensaje.message)) {
+      let registro = porPalabra.get(palabra);
+
+      if (!registro) {
+        registro = { usuarios: new Set(), mensajes: [] };
+        porPalabra.set(palabra, registro);
+      }
+
+      registro.usuarios.add(usuario);
+      registro.mensajes.push({ id: mensaje.id, user: usuario });
+    }
+  }
+
+  const coronas = new Map<string, Corona>();
+
+  for (const [palabra, registro] of porPalabra) {
+    if (registro.usuarios.size < 2) continue;
+
+    const usuariosVistos = new Set<string>();
+    let rank = 0;
+
+    for (const mensaje of registro.mensajes) {
+      if (usuariosVistos.has(mensaje.user)) continue;
+
+      usuariosVistos.add(mensaje.user);
+      rank += 1;
+
+      if (rank > 3) break;
+
+      const actual = coronas.get(mensaje.id);
+      if (!actual || rank < actual.rank) {
+        coronas.set(mensaje.id, { rank, palabra });
+      }
+    }
+  }
+
+  return coronas;
+}
 
 type ChatMessage = {
   id: string;
   user: string;
   initials: string;
+  avatar?: string;
   message: string;
   time: string;
 };
 
 type LiveMessage = {
   user: string;
+  avatar?: string;
   comment: string;
   time: string;
 };
@@ -164,13 +469,15 @@ const estadoHistorial: Record<EstadoPedido, string> = {
 function LiveChatPanel({
   username,
   active,
-  registrados,
+  conteoCodigos,
+  mensajesRegistrados,
   onUsarCodigo,
 }: {
   username: string;
   active: boolean;
-  registrados: string[];
-  onUsarCodigo: (codigo: string) => void;
+  conteoCodigos: Record<string, number>;
+  mensajesRegistrados: string[];
+  onUsarCodigo: (codigo: string, mensajeId: string) => void;
 }) {
   const [mensajes, setMensajes] = useState<ChatMessage[]>([]);
   const [estado, setEstado] = useState<EstadoConexion>("conectando");
@@ -178,6 +485,9 @@ function LiveChatPanel({
   const [intento, setIntento] = useState(0);
   const [filtroChat, setFiltroChat] = useState<"todos" | "codigos">("todos");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const siguiendo = useRef(true);
+  const bajando = useRef(false);
+  const [mostrarIrAlFinal, setMostrarIrAlFinal] = useState(false);
 
   useEffect(() => {
     const source = new EventSource(
@@ -198,6 +508,7 @@ function LiveChatPanel({
               id: crypto.randomUUID(),
               user,
               initials: user.slice(0, 2).toUpperCase(),
+              avatar: data.avatar?.trim() || undefined,
               message: comment,
               time: data.time ?? "",
             },
@@ -254,8 +565,28 @@ function LiveChatPanel({
 
   useEffect(() => {
     const contenedor = scrollRef.current;
-    if (contenedor) contenedor.scrollTop = contenedor.scrollHeight;
-  }, [mensajes.length, filtroChat]);
+    if (contenedor && siguiendo.current) {
+      contenedor.scrollTop = contenedor.scrollHeight;
+    }
+  }, [mensajes]);
+
+  useEffect(() => {
+    const contenedor = scrollRef.current;
+    if (!contenedor) return;
+
+    contenedor.scrollTop = contenedor.scrollHeight;
+    siguiendo.current = true;
+    bajando.current = false;
+  }, [filtroChat]);
+
+  useEffect(() => {
+    if (!active) return;
+
+    const contenedor = scrollRef.current;
+    if (contenedor && siguiendo.current) {
+      contenedor.scrollTop = contenedor.scrollHeight;
+    }
+  }, [active]);
 
   const activo = estado === "conectado";
   const conectando = estado === "conectando";
@@ -266,18 +597,71 @@ function LiveChatPanel({
   const totalCodigos = mensajes.filter(
     (mensaje) => extraerCodigo(mensaje.message) !== null,
   ).length;
+  const coronas = calcularCoronas(mensajesVisibles);
 
   function reconectar() {
     setMensajes([]);
     setErrorLive(null);
     setEstado("conectando");
     setIntento((value) => value + 1);
+    siguiendo.current = true;
+    bajando.current = false;
+    setMostrarIrAlFinal(false);
+  }
+
+  function cambiarFiltro(nuevo: "todos" | "codigos") {
+    setFiltroChat(nuevo);
+    siguiendo.current = true;
+    bajando.current = false;
+    setMostrarIrAlFinal(false);
+  }
+
+  function alDesplazar() {
+    const contenedor = scrollRef.current;
+    if (!contenedor) return;
+
+    const distancia =
+      contenedor.scrollHeight - contenedor.scrollTop - contenedor.clientHeight;
+    const alFondo = distancia < 80;
+
+    if (bajando.current) {
+      if (alFondo) {
+        bajando.current = false;
+        siguiendo.current = true;
+        setMostrarIrAlFinal(false);
+      }
+      return;
+    }
+
+    siguiendo.current = alFondo;
+    setMostrarIrAlFinal(!alFondo);
+  }
+
+  function irAlFinal() {
+    const contenedor = scrollRef.current;
+    if (!contenedor) return;
+
+    bajando.current = true;
+    siguiendo.current = true;
+    setMostrarIrAlFinal(false);
+
+    contenedor.scrollTo({ top: contenedor.scrollHeight, behavior: "smooth" });
+
+    window.setTimeout(() => {
+      if (!siguiendo.current) return;
+
+      const actual = scrollRef.current;
+      if (!actual) return;
+
+      actual.scrollTop = actual.scrollHeight;
+      bajando.current = false;
+    }, 400);
   }
 
   return (
     <div
       className={cn(
-        "min-h-0 flex-1 flex-col",
+        "relative min-h-0 flex-1 flex-col",
         active ? "flex" : "hidden",
       )}
     >
@@ -323,7 +707,7 @@ function LiveChatPanel({
             type="button"
             variant="ghost"
             size="xs"
-            onClick={() => setFiltroChat("todos")}
+            onClick={() => cambiarFiltro("todos")}
             className={cn(
               "h-6 rounded-md px-2 text-[11px]",
               filtroChat === "todos" &&
@@ -336,7 +720,7 @@ function LiveChatPanel({
             type="button"
             variant="ghost"
             size="xs"
-            onClick={() => setFiltroChat("codigos")}
+            onClick={() => cambiarFiltro("codigos")}
             className={cn(
               "h-6 rounded-md px-2 text-[11px]",
               filtroChat === "codigos" &&
@@ -349,7 +733,11 @@ function LiveChatPanel({
         </div>
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 sm:p-4">
+      <div
+        ref={scrollRef}
+        onScroll={alDesplazar}
+        className="flex-1 overflow-y-auto p-3 sm:p-4"
+      >
         {estado === "error" ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
             <p className="text-sm font-medium">No se pudo conectar al live</p>
@@ -384,25 +772,47 @@ function LiveChatPanel({
           </div>
         ) : (
           <div className="space-y-3">
-            {mensajesVisibles.map((mensaje, index) => {
+            {mensajesVisibles.map((mensaje) => {
               const codigoChat = extraerCodigo(mensaje.message);
-              const registrado = codigoChat
-                ? registrados.includes(codigoChat)
-                : false;
+              const veces = codigoChat ? (conteoCodigos[codigoChat] ?? 0) : 0;
+              const registrado = mensajesRegistrados.includes(mensaje.id);
+              const corona = coronas.get(mensaje.id);
+              const avatar = colorAvatar(mensaje.user);
 
               return (
                 <div key={mensaje.id} className="flex gap-2.5">
                   <div
                     className={cn(
-                      "flex size-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold",
-                      avatarColors[index % avatarColors.length],
+                      "relative flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full text-[11px] font-semibold",
+                      avatar.avatar,
                     )}
                   >
                     {mensaje.initials}
+                    {mensaje.avatar && (
+                      <>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={mensaje.avatar}
+                          alt={mensaje.user}
+                          loading="lazy"
+                          decoding="async"
+                          referrerPolicy="no-referrer"
+                          className="absolute inset-0 size-full object-cover"
+                          onError={(event) => {
+                            event.currentTarget.style.display = "none";
+                          }}
+                        />
+                      </>
+                    )}
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline gap-2">
-                      <p className="truncate text-xs font-medium">
+                      <p
+                        className={cn(
+                          "truncate text-xs font-medium",
+                          avatar.text,
+                        )}
+                      >
                         {mensaje.user}
                       </p>
                       <span className="shrink-0 text-[10px] text-muted-foreground">
@@ -417,22 +827,46 @@ function LiveChatPanel({
                             {mensaje.message}
                           </p>
                         )}
-                        <div className="flex items-center gap-3">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
                           <p className="font-mono text-sm font-semibold tracking-widest text-emerald-700 dark:text-emerald-400">
                             {codigoChat}
                           </p>
+                          {corona && (
+                            <span
+                              title={`${corona.rank}º en decir "${corona.palabra}"`}
+                              className={cn(
+                                "inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums",
+                                coronaEstilos[corona.rank],
+                              )}
+                            >
+                              <Crown size={12} weight="Filled" />
+                              {corona.rank}
+                            </span>
+                          )}
                           {registrado ? (
                             <span className="flex items-center gap-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
                               <CheckCircle size={14} />
                               Registrado
                             </span>
                           ) : (
-                            <Button
-                              size="sm"
-                              onClick={() => onUsarCodigo(codigoChat)}
-                            >
-                              Registrar
-                            </Button>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                size="sm"
+                                onClick={() =>
+                                  onUsarCodigo(codigoChat, mensaje.id)
+                                }
+                              >
+                                Registrar
+                              </Button>
+                              {veces > 0 && (
+                                <span
+                                  title={`${veces} registro${veces === 1 ? "" : "s"} con este código`}
+                                  className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-[10px] font-semibold text-muted-foreground tabular-nums"
+                                >
+                                  {veces}
+                                </span>
+                              )}
+                            </div>
                           )}
                         </div>
                       </div>
@@ -448,6 +882,19 @@ function LiveChatPanel({
           </div>
         )}
       </div>
+
+      {mostrarIrAlFinal && (
+        <Button
+          type="button"
+          size="icon"
+          onClick={irAlFinal}
+          aria-label="Ir a los últimos mensajes"
+          title="Ir a los últimos mensajes"
+          className="absolute bottom-4 right-4 z-10 rounded-full shadow-lg animate-in fade-in slide-in-from-bottom-2"
+        >
+          <ArrowDown size={16} />
+        </Button>
+      )}
     </div>
   );
 }
@@ -472,12 +919,16 @@ export default function LivePage() {
   const [mostrarColor, setMostrarColor] = useState(true);
   const [mostrarTalla, setMostrarTalla] = useState(true);
   const [mostrarTipo, setMostrarTipo] = useState(true);
-  const [registrados, setRegistrados] = useState<string[]>([]);
   const [lives, setLives] = useState<string[]>([]);
   const [liveActivo, setLiveActivo] = useState(0);
   const [nuevoLive, setNuevoLive] = useState("");
   const [agregarLiveAbierto, setAgregarLiveAbierto] = useState(false);
   const [registroAbierto, setRegistroAbierto] = useState(false);
+  const [mensajesRegistrados, setMensajesRegistrados] = useState<string[]>([]);
+  const [mensajePendiente, setMensajePendiente] = useState<{
+    id: string;
+    codigo: string;
+  } | null>(null);
   const esEscritorio = useEsEscritorio();
   const [catalogoAbierto, setCatalogoAbierto] = useState(false);
   const [productosCatalogo, setProductosCatalogo] = useState<ProductoCatalogo[]>(
@@ -494,6 +945,11 @@ export default function LivePage() {
     getPedidos,
     getPedidosServidor,
   );
+
+  const conteoCodigos: Record<string, number> = {};
+  for (const pedido of pedidos) {
+    conteoCodigos[pedido.codigo] = (conteoCodigos[pedido.codigo] ?? 0) + 1;
+  }
 
   async function cargarCatalogo() {
     setCargandoCatalogo(true);
@@ -566,8 +1022,9 @@ export default function LivePage() {
     setAgregarLiveAbierto(false);
   }
 
-  function usarCodigo(codigoChat: string) {
+  function usarCodigo(codigoChat: string, mensajeId: string) {
     setCodigo(codigoChat);
+    setMensajePendiente({ id: mensajeId, codigo: codigoChat });
     if (window.matchMedia("(max-width: 1023px)").matches) {
       setRegistroAbierto(true);
     } else {
@@ -578,10 +1035,6 @@ export default function LivePage() {
   function registrar(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!formularioValido) return;
-
-    setRegistrados((prev) =>
-      prev.includes(codigo) ? prev : [...prev, codigo],
-    );
 
     const nombre = conjunto.trim();
     setHistorial((prev) =>
@@ -605,6 +1058,15 @@ export default function LivePage() {
       total: monto,
       live: lives[liveActivo] ?? "",
     });
+
+    if (mensajePendiente && mensajePendiente.codigo === codigo) {
+      setMensajesRegistrados((prev) =>
+        prev.includes(mensajePendiente.id)
+          ? prev
+          : [...prev, mensajePendiente.id],
+      );
+    }
+    setMensajePendiente(null);
 
     const resumen = [
       lives[liveActivo] ? `@${lives[liveActivo]}` : "",
@@ -729,12 +1191,27 @@ export default function LivePage() {
 
       <form onSubmit={registrar} className="space-y-4 p-4">
         <div className="space-y-2">
-          <Label htmlFor="codigo">Código del cliente</Label>
+          <div className="flex items-center justify-between gap-2">
+            <Label htmlFor="codigo">Código del cliente</Label>
+            {codigoValido && (conteoCodigos[codigo] ?? 0) > 0 && (
+              <span className="flex items-center gap-1 text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
+                <CheckCircle size={12} />
+                Registrado
+                <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 font-semibold tabular-nums">
+                  {conteoCodigos[codigo]}
+                </span>
+              </span>
+            )}
+          </div>
           <Input
             id="codigo"
             value={codigo}
             onChange={(event) => {
-              setCodigo(event.target.value.replace(/\D/g, "").slice(0, 4));
+              const valor = event.target.value.replace(/\D/g, "").slice(0, 4);
+              setCodigo(valor);
+              if (mensajePendiente && valor !== mensajePendiente.codigo) {
+                setMensajePendiente(null);
+              }
             }}
             placeholder="4821"
             inputMode="numeric"
@@ -1076,7 +1553,7 @@ export default function LivePage() {
     </Card>  );
 
   return (
-    <div className="grid w-full grid-cols-1 gap-4 p-0 max-lg:fixed max-lg:inset-x-0 max-lg:top-14 max-lg:bottom-[calc(4.25rem+env(safe-area-inset-bottom))] max-lg:z-10 max-lg:block max-lg:min-h-0 max-lg:gap-0 lg:grid-cols-[260px_minmax(0,1fr)_300px] lg:p-6 xl:grid-cols-[320px_minmax(0,1fr)_380px] 2xl:grid-cols-[390px_minmax(0,1fr)_470px]">
+    <div className="grid w-full grid-cols-1 gap-4 p-0 max-lg:fixed max-lg:inset-x-0 max-lg:top-14 max-lg:bottom-0 max-lg:z-10 max-lg:block max-lg:min-h-0 max-lg:gap-0 max-lg:pb-[env(safe-area-inset-bottom)] lg:grid-cols-[260px_minmax(0,1fr)_300px] lg:p-6 xl:grid-cols-[320px_minmax(0,1fr)_380px] 2xl:grid-cols-[390px_minmax(0,1fr)_470px]">
       <Card
         className={cn(
           "flex h-full min-h-0 flex-col gap-0 overflow-hidden rounded-xl bg-transparent py-0 ring-0 max-lg:rounded-none dark:bg-transparent lg:sticky lg:top-20 lg:h-[calc(100svh-6.5rem)]",
@@ -1156,9 +1633,9 @@ export default function LivePage() {
                       size="icon-xs"
                       aria-label="Agregar live"
                       disabled={lives.length >= 3}
-                      className="shrink-0"
+                      className="shrink-0 max-lg:size-8"
                     >
-                      <Plus size={14} />
+                      <Plus size={14} className="size-4 lg:size-3" />
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent align="end" className="w-64 p-3">
@@ -1199,9 +1676,9 @@ export default function LivePage() {
                   aria-label="Registrar pedido"
                   title="Registrar pedido"
                   onClick={() => setRegistroAbierto(true)}
-                  className="lg:hidden"
+                  className="max-lg:size-8 lg:hidden"
                 >
-                  <Receipt5 size={14} />
+                  <Receipt5 size={14} className="size-4" />
                 </Button>
               </div>
             </div>
@@ -1211,7 +1688,8 @@ export default function LivePage() {
                 key={usuario}
                 username={usuario}
                 active={index === liveActivo}
-                registrados={registrados}
+                conteoCodigos={conteoCodigos}
+                mensajesRegistrados={mensajesRegistrados}
                 onUsarCodigo={usarCodigo}
               />
             ))}
@@ -1346,7 +1824,7 @@ export default function LivePage() {
         <SheetContent
           side="bottom"
           showCloseButton={false}
-          className="max-h-[90svh] gap-0 overflow-y-auto rounded-t-2xl border-t p-0 pb-[env(safe-area-inset-bottom)]"
+          className="max-h-[90svh] gap-0 overflow-y-auto overscroll-contain rounded-t-2xl border-t p-0 pb-[env(safe-area-inset-bottom)] [scrollbar-color:var(--border)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:bg-transparent"
         >
           <SheetHeader className="sr-only">
             <SheetTitle>Registrar pedido</SheetTitle>
@@ -1356,7 +1834,7 @@ export default function LivePage() {
             aria-hidden="true"
             className="mx-auto mt-2 mb-1 h-1.5 w-10 shrink-0 rounded-full bg-muted-foreground/30"
           />
-          {tarjetaRegistro}
+          <div className="shrink-0">{tarjetaRegistro}</div>
         </SheetContent>
       </Sheet>
     </div>

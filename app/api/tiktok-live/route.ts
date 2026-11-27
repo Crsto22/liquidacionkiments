@@ -1,13 +1,30 @@
 import type { NextRequest } from "next/server";
 import { EventType, TikTokLiveClient } from "piratetok-live-js";
 
+type ImagePayload = {
+  urlList?: string[];
+  url_list?: string[];
+};
+
 type ChatPayload = {
   content?: string;
   user?: {
     nickname?: string;
     uniqueId?: string;
+    avatarThumb?: ImagePayload;
+    avatarMedium?: ImagePayload;
+    avatarLarge?: ImagePayload;
   };
 };
+
+function primerAvatar(...imagenes: (ImagePayload | undefined)[]) {
+  for (const imagen of imagenes) {
+    const url = imagen?.urlList?.[0] ?? imagen?.url_list?.[0];
+    if (url) return url;
+  }
+
+  return "";
+}
 
 export async function GET(request: NextRequest) {
   const username = (request.nextUrl.searchParams.get("username") ?? "kiments.2")
@@ -72,6 +89,11 @@ export async function GET(request: NextRequest) {
 
         send("chat", {
           user: data.user?.nickname ?? data.user?.uniqueId ?? "Anónimo",
+          avatar: primerAvatar(
+            data.user?.avatarThumb,
+            data.user?.avatarMedium,
+            data.user?.avatarLarge,
+          ),
           comment,
           time: new Date().toLocaleTimeString("es-PE", {
             hour: "2-digit",

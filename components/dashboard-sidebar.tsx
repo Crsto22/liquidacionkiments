@@ -5,6 +5,13 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import type { IconComponent } from "reicon-react";
 import { Box, ChartBar, Grid, Radio, User } from "reicon-react";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 
 type SidebarItem = {
   label: string;
@@ -20,7 +27,15 @@ const items: SidebarItem[] = [
   { label: "Perfil", href: "/dashboard/perfil", icon: User },
 ];
 
-export function DashboardSidebar({ collapsed }: { collapsed: boolean }) {
+export function DashboardSidebar({
+  collapsed,
+  mobileOpen,
+  onMobileOpenChange,
+}: {
+  collapsed: boolean;
+  mobileOpen: boolean;
+  onMobileOpenChange: (open: boolean) => void;
+}) {
   const pathname = usePathname();
 
   return (
@@ -68,43 +83,46 @@ export function DashboardSidebar({ collapsed }: { collapsed: boolean }) {
         </nav>
       </aside>
 
-      <nav
-        aria-label="Navegación principal"
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-white/10 bg-zinc-950 pb-[env(safe-area-inset-bottom)] lg:hidden dark:bg-zinc-900"
-      >
-        <div className="flex items-stretch px-1">
-          {items.map((item) => {
-            const Icon = item.icon;
-            const active = pathname === item.href;
+      <Sheet open={mobileOpen} onOpenChange={onMobileOpenChange}>
+        <SheetContent
+          side="left"
+          className="w-64 gap-0 border-r-0 bg-zinc-950 p-3 text-white sm:max-w-none dark:bg-zinc-900 [&_[data-slot=sheet-close]]:text-zinc-300 [&_[data-slot=sheet-close]]:hover:bg-white/10 [&_[data-slot=sheet-close]]:hover:text-white"
+        >
+          <SheetHeader className="sr-only">
+            <SheetTitle>Menú</SheetTitle>
+            <SheetDescription>Navegación principal</SheetDescription>
+          </SheetHeader>
 
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                aria-current={active ? "page" : undefined}
-                className={cn(
-                  "flex min-w-0 flex-1 flex-col items-center gap-1 rounded-lg py-2 text-[10px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-white/30",
-                  active
-                    ? "text-white"
-                    : "text-zinc-400 hover:text-white",
-                )}
-              >
-                <span
+          <p className="px-2 pb-3 pt-1 text-sm font-semibold text-white">
+            Kiments
+          </p>
+
+          <nav className="flex flex-col gap-1">
+            {items.map((item) => {
+              const Icon = item.icon;
+              const active = pathname === item.href;
+
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  aria-current={active ? "page" : undefined}
+                  onClick={() => onMobileOpenChange(false)}
                   className={cn(
-                    "flex size-8 items-center justify-center rounded-lg transition-colors",
-                    active && "bg-white/10",
+                    "flex h-11 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-white/30",
+                    active
+                      ? "bg-white/10 text-white"
+                      : "text-zinc-400 hover:bg-white/5 hover:text-white",
                   )}
                 >
-                  <Icon size={19} className="shrink-0" />
-                </span>
-                <span className="w-full truncate text-center">
-                  {item.label}
-                </span>
-              </Link>
-            );
-          })}
-        </div>
-      </nav>
+                  <Icon size={20} className="shrink-0" />
+                  <span className="truncate">{item.label}</span>
+                </Link>
+              );
+            })}
+          </nav>
+        </SheetContent>
+      </Sheet>
     </>
   );
 }

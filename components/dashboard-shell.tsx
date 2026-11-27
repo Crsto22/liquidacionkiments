@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { DashboardSidebar } from "@/components/dashboard-sidebar";
@@ -14,7 +14,18 @@ import { Bell, Search, SidebarLeft } from "reicon-react";
 
 export function DashboardShell({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
+
+  useEffect(() => {
+    const query = window.matchMedia("(min-width: 1024px)");
+    const onChange = () => {
+      if (query.matches) setMobileOpen(false);
+    };
+
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
 
   const titles: Record<string, string> = {
     "/dashboard": "Dashboard",
@@ -29,10 +40,27 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   return (
     <TooltipProvider>
       <div className="flex min-h-svh bg-background">
-        <DashboardSidebar collapsed={collapsed} />
+        <DashboardSidebar
+          collapsed={collapsed}
+          mobileOpen={mobileOpen}
+          onMobileOpenChange={setMobileOpen}
+        />
 
         <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b bg-background/95 px-3 backdrop-blur sm:px-4">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="lg:hidden"
+            onClick={() => setMobileOpen(true)}
+            aria-label="Abrir menú"
+            aria-expanded={mobileOpen}
+            title="Abrir menú"
+          >
+            <SidebarLeft size={18} />
+          </Button>
+
           <Button
             type="button"
             variant="ghost"
@@ -105,7 +133,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-          <main className="min-w-0 flex-1 pb-20 lg:pb-0">{children}</main>
+          <main className="min-w-0 flex-1">{children}</main>
         </div>
       </div>
     </TooltipProvider>
