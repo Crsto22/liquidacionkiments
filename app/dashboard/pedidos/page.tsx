@@ -37,6 +37,7 @@ import {
   Download,
   Eye,
   Export,
+  Gift,
   MoneyRecive,
   MoreVCircle,
   Plus,
@@ -341,7 +342,14 @@ export default function PedidosPage() {
                       {pedido.talla}
                     </TableCell>
                     <TableCell className="text-right font-medium tabular-nums">
-                      {money.format(pedido.total)}
+                      {pedido.regalo ? (
+                        <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400">
+                          <Gift size={12} weight="Filled" />
+                          Regalo
+                        </span>
+                      ) : (
+                        money.format(pedido.total)
+                      )}
                     </TableCell>
                     <TableCell>
                       <span

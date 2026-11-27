@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -67,15 +68,17 @@ import {
 import { CheckCircle, Clock, Hanger, Hanger2, Tag, Tshirt } from "reicon-react";
 import {
   ArrowDown,
-  Crown,
+  ChevronDown,
   Download,
   Eye,
+  Gift,
   MoreVCircle,
   Plus,
   Printer,
   Receipt5,
   Settings,
   Trash,
+  X,
 } from "reicon-react";
 
 const money = new Intl.NumberFormat("es-PE", {
@@ -336,25 +339,44 @@ function palabrasDeMensaje(texto: string) {
   );
 }
 
-type Corona = {
-  rank: number;
+type Ganador = {
+  id: string;
+  user: string;
+  initials: string;
+  avatar?: string;
+  codigo: string;
+};
+
+type DeteccionSorteo = {
   palabra: string;
+  ids: string[];
+  ganadores: Ganador[];
 };
 
-const coronaEstilos: Record<number, string> = {
-  1: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
-  2: "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300",
-  3: "bg-orange-500/15 text-orange-700 dark:text-orange-400",
+type RondaSorteo = {
+  palabra: string;
+  ganadores: Ganador[];
 };
 
-function calcularCoronas(mensajes: ChatMessage[]) {
+const posicionesEstilos: Record<number, string> = {
+  1: "bg-amber-500 text-white",
+  2: "bg-zinc-400 text-white",
+  3: "bg-orange-600 text-white",
+};
+
+function detectarSorteos(mensajes: ChatMessage[]) {
   const porPalabra = new Map<
     string,
-    { usuarios: Set<string>; mensajes: { id: string; user: string }[] }
+    {
+      ids: string[];
+      mensajes: ChatMessage[];
+      usuarios: Set<string>;
+      gatillo: number;
+    }
   >();
 
-  for (const mensaje of mensajes) {
-    if (!extraerCodigo(mensaje.message)) continue;
+  mensajes.forEach((mensaje, index) => {
+    if (!extraerCodigo(mensaje.message)) return;
 
     const usuario = mensaje.user.trim().toLowerCase();
 
@@ -362,39 +384,48 @@ function calcularCoronas(mensajes: ChatMessage[]) {
       let registro = porPalabra.get(palabra);
 
       if (!registro) {
-        registro = { usuarios: new Set(), mensajes: [] };
+        registro = { ids: [], mensajes: [], usuarios: new Set(), gatillo: -1 };
         porPalabra.set(palabra, registro);
       }
 
+      registro.ids.push(mensaje.id);
+      registro.mensajes.push(mensaje);
       registro.usuarios.add(usuario);
-      registro.mensajes.push({ id: mensaje.id, user: usuario });
-    }
-  }
 
-  const coronas = new Map<string, Corona>();
-
-  for (const [palabra, registro] of porPalabra) {
-    if (registro.usuarios.size < 2) continue;
-
-    const usuariosVistos = new Set<string>();
-    let rank = 0;
-
-    for (const mensaje of registro.mensajes) {
-      if (usuariosVistos.has(mensaje.user)) continue;
-
-      usuariosVistos.add(mensaje.user);
-      rank += 1;
-
-      if (rank > 3) break;
-
-      const actual = coronas.get(mensaje.id);
-      if (!actual || rank < actual.rank) {
-        coronas.set(mensaje.id, { rank, palabra });
+      if (registro.usuarios.size === 2 && registro.gatillo === -1) {
+        registro.gatillo = index;
       }
     }
-  }
+  });
 
-  return coronas;
+  return [...porPalabra.entries()]
+    .filter(([, registro]) => registro.usuarios.size >= 2)
+    .sort((a, b) => a[1].gatillo - b[1].gatillo)
+    .map(([palabra, registro]): DeteccionSorteo => {
+      const usuariosVistos = new Set<string>();
+      const ganadores: Ganador[] = [];
+
+      for (const mensaje of registro.mensajes) {
+        const usuario = mensaje.user.trim().toLowerCase();
+        if (usuariosVistos.has(usuario)) continue;
+        usuariosVistos.add(usuario);
+
+        const codigo = extraerCodigo(mensaje.message);
+        if (!codigo) continue;
+
+        ganadores.push({
+          id: mensaje.id,
+          user: mensaje.user,
+          initials: mensaje.initials,
+          avatar: mensaje.avatar,
+          codigo,
+        });
+
+        if (ganadores.length === 3) break;
+      }
+
+      return { palabra, ids: registro.ids, ganadores };
+    });
 }
 
 type ChatMessage = {
@@ -488,6 +519,121 @@ function LiveChatPanel({
   const siguiendo = useRef(true);
   const bajando = useRef(false);
   const [mostrarIrAlFinal, setMostrarIrAlFinal] = useState(false);
+  const [ronda, setRonda] = useState<RondaSorteo | null>(null);
+  const [sorteoAbierto, setSorteoAbierto] = useState(true);
+  const rondaRef = useRef<RondaSorteo | null>(null);
+  const mostradasRef = useRef<Map<string, Set<string>>>(new Map());
+  const timerSorteo = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mensajesRef = useRef<ChatMessage[]>([]);
+
+  const cerrarRonda = useCallback(() => {
+    if (timerSorteo.current) {
+      clearTimeout(timerSorteo.current);
+      timerSorteo.current = null;
+    }
+
+    rondaRef.current = null;
+    setRonda(null);
+  }, []);
+
+  const mostrarRonda = useCallback(
+    (deteccion: DeteccionSorteo) => {
+      cerrarRonda();
+
+      const nueva: RondaSorteo = {
+        palabra: deteccion.palabra,
+        ganadores: deteccion.ganadores.slice(0, 3),
+      };
+
+      rondaRef.current = nueva;
+      setRonda(nueva);
+      setSorteoAbierto(true);
+      mostradasRef.current.set(deteccion.palabra, new Set(deteccion.ids));
+
+      timerSorteo.current = setTimeout(() => {
+        rondaRef.current = null;
+        timerSorteo.current = null;
+        setRonda(null);
+      }, 120_000);
+    },
+    [cerrarRonda],
+  );
+
+  const procesarSorteo = useCallback(
+    (mensajes: ChatMessage[]) => {
+      const detecciones = detectarSorteos(mensajes);
+      const idsActuales = new Set(mensajes.map((mensaje) => mensaje.id));
+
+      for (const [palabra, ids] of mostradasRef.current) {
+        let sigueEnChat = false;
+
+        for (const id of ids) {
+          if (idsActuales.has(id)) {
+            sigueEnChat = true;
+            break;
+          }
+        }
+
+        if (!sigueEnChat) mostradasRef.current.delete(palabra);
+      }
+
+      const actual = rondaRef.current;
+
+      if (actual) {
+        const deteccionActual = detecciones.find(
+          (deteccion) => deteccion.palabra === actual.palabra,
+        );
+
+        if (deteccionActual) {
+          const nuevos = deteccionActual.ganadores.filter(
+            (ganador) =>
+              !actual.ganadores.some(
+                (existente) =>
+                  existente.user.trim().toLowerCase() ===
+                  ganador.user.trim().toLowerCase(),
+              ),
+          );
+
+          if (nuevos.length > 0 && actual.ganadores.length < 3) {
+            const actualizada: RondaSorteo = {
+              ...actual,
+              ganadores: [...actual.ganadores, ...nuevos].slice(0, 3),
+            };
+
+            rondaRef.current = actualizada;
+            setRonda(actualizada);
+          }
+        }
+      }
+
+      const existente = rondaRef.current;
+      const nueva = detecciones.find(
+        (deteccion) =>
+          deteccion.palabra !== existente?.palabra &&
+          !mostradasRef.current.has(deteccion.palabra) &&
+          deteccion.ganadores.length > 0,
+      );
+
+      if (nueva) mostrarRonda(nueva);
+    },
+    [mostrarRonda],
+  );
+
+  const agregarMensaje = useCallback(
+    (mensaje: ChatMessage) => {
+      const siguiente = [...mensajesRef.current.slice(-49), mensaje];
+      mensajesRef.current = siguiente;
+      setMensajes(siguiente);
+      procesarSorteo(siguiente);
+    },
+    [procesarSorteo],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (timerSorteo.current) clearTimeout(timerSorteo.current);
+    };
+  }, []);
 
   useEffect(() => {
     const source = new EventSource(
@@ -501,19 +647,15 @@ function LiveChatPanel({
         if (!comment) return;
 
         const user = (data.user ?? "Anónimo").trim() || "Anónimo";
-        setMensajes((prev) =>
-          [
-            ...prev.slice(-49),
-            {
-              id: crypto.randomUUID(),
-              user,
-              initials: user.slice(0, 2).toUpperCase(),
-              avatar: data.avatar?.trim() || undefined,
-              message: comment,
-              time: data.time ?? "",
-            },
-          ],
-        );
+        const nuevo: ChatMessage = {
+          id: crypto.randomUUID(),
+          user,
+          initials: user.slice(0, 2).toUpperCase(),
+          avatar: data.avatar?.trim() || undefined,
+          message: comment,
+          time: data.time ?? "",
+        };
+        agregarMensaje(nuevo);
       } catch {
         // Ignora eventos con formato inválido.
       }
@@ -561,7 +703,7 @@ function LiveChatPanel({
     };
 
     return () => source.close();
-  }, [username, intento]);
+  }, [username, intento, agregarMensaje]);
 
   useEffect(() => {
     const contenedor = scrollRef.current;
@@ -597,10 +739,12 @@ function LiveChatPanel({
   const totalCodigos = mensajes.filter(
     (mensaje) => extraerCodigo(mensaje.message) !== null,
   ).length;
-  const coronas = calcularCoronas(mensajesVisibles);
 
   function reconectar() {
     setMensajes([]);
+    mensajesRef.current = [];
+    mostradasRef.current.clear();
+    cerrarRonda();
     setErrorLive(null);
     setEstado("conectando");
     setIntento((value) => value + 1);
@@ -776,7 +920,6 @@ function LiveChatPanel({
               const codigoChat = extraerCodigo(mensaje.message);
               const veces = codigoChat ? (conteoCodigos[codigoChat] ?? 0) : 0;
               const registrado = mensajesRegistrados.includes(mensaje.id);
-              const corona = coronas.get(mensaje.id);
               const avatar = colorAvatar(mensaje.user);
 
               return (
@@ -831,18 +974,6 @@ function LiveChatPanel({
                           <p className="font-mono text-sm font-semibold tracking-widest text-emerald-700 dark:text-emerald-400">
                             {codigoChat}
                           </p>
-                          {corona && (
-                            <span
-                              title={`${corona.rank}º en decir "${corona.palabra}"`}
-                              className={cn(
-                                "inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums",
-                                coronaEstilos[corona.rank],
-                              )}
-                            >
-                              <Crown size={12} weight="Filled" />
-                              {corona.rank}
-                            </span>
-                          )}
                           {registrado ? (
                             <span className="flex items-center gap-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
                               <CheckCircle size={14} />
@@ -851,6 +982,7 @@ function LiveChatPanel({
                           ) : (
                             <div className="flex items-center gap-2">
                               <Button
+                                type="button"
                                 size="sm"
                                 onClick={() =>
                                   onUsarCodigo(codigoChat, mensaje.id)
@@ -895,6 +1027,140 @@ function LiveChatPanel({
           <ArrowDown size={16} />
         </Button>
       )}
+
+      {active && ronda && (
+        <Card className="absolute left-1/2 top-20 z-20 w-[calc(100%-1rem)] max-w-[360px] -translate-x-1/2 gap-0 overflow-hidden rounded-xl border border-border/60 bg-popover py-0 text-popover-foreground shadow-xl ring-0 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="flex items-center gap-1 border-b px-2 py-1.5">
+            <button
+              type="button"
+              onClick={() => setSorteoAbierto((valor) => !valor)}
+              aria-expanded={sorteoAbierto}
+              className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 text-left transition-colors hover:bg-muted/60"
+            >
+              <p className="text-xs font-semibold">Ganadores</p>
+              <span className="truncate text-[11px] text-muted-foreground">
+                “{ronda.palabra}”
+              </span>
+              <ChevronDown
+                size={14}
+                className={cn(
+                  "ml-auto shrink-0 transition-transform duration-200",
+                  sorteoAbierto && "rotate-180",
+                )}
+              />
+            </button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              onClick={cerrarRonda}
+              aria-label="Cerrar sorteo"
+              title="Cerrar sorteo"
+              className="shrink-0"
+            >
+              <X size={14} />
+            </Button>
+          </div>
+
+          {sorteoAbierto && (
+            <div className="grid grid-cols-3 gap-2 p-3 animate-in fade-in duration-150">
+            {[0, 1, 2].map((indice) => {
+              const ganador = ronda.ganadores[indice];
+              const avatar = ganador ? colorAvatar(ganador.user) : null;
+
+              return (
+                <div
+                  key={indice}
+                  className="flex min-w-0 flex-col items-center gap-1.5 rounded-lg bg-[#f6f8f7] px-1.5 py-2 text-center dark:bg-zinc-900"
+                >
+                  <div className="relative mt-2">
+                    <span
+                      className={cn(
+                        "absolute -top-2 left-1/2 z-10 flex size-5 -translate-x-1/2 items-center justify-center rounded-full text-[10px] font-bold tabular-nums ring-2 ring-[#f6f8f7] dark:ring-zinc-900",
+                        posicionesEstilos[indice + 1],
+                      )}
+                    >
+                      {indice + 1}
+                    </span>
+
+                    {ganador ? (
+                      <div
+                        className={cn(
+                          "relative flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full text-[11px] font-semibold",
+                          avatar?.avatar,
+                        )}
+                      >
+                        {ganador.initials}
+                        {ganador.avatar && (
+                          <>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={ganador.avatar}
+                              alt={ganador.user}
+                              loading="lazy"
+                              decoding="async"
+                              referrerPolicy="no-referrer"
+                              className="absolute inset-0 size-full object-cover"
+                              onError={(event) => {
+                                event.currentTarget.style.display = "none";
+                              }}
+                            />
+                          </>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex size-11 shrink-0 items-center justify-center rounded-full border border-dashed border-border text-[11px] text-muted-foreground">
+                        —
+                      </div>
+                    )}
+                  </div>
+
+                  {ganador ? (
+                    <>
+                      <p
+                        className={cn(
+                          "w-full truncate text-[11px] font-semibold",
+                          avatar?.text,
+                        )}
+                      >
+                        {ganador.user}
+                      </p>
+                      <p className="font-mono text-[10px] tracking-widest text-muted-foreground">
+                        {ganador.codigo}
+                      </p>
+                      {mensajesRegistrados.includes(ganador.id) ? (
+                        <span className="mt-0.5 flex h-6 w-full items-center justify-center gap-1 rounded-md bg-emerald-500/10 text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
+                          <CheckCircle size={11} />
+                          Registrado
+                        </span>
+                      ) : (
+                        <Button
+                          type="button"
+                          size="xs"
+                          onClick={() => {
+                            onUsarCodigo(ganador.codigo, ganador.id);
+                            setSorteoAbierto(false);
+                          }}
+                          aria-label={`Registrar pedido de ${ganador.user}`}
+                          title="Registrar pedido"
+                          className="mt-0.5 w-full px-1 text-[10px]"
+                        >
+                          Registrar
+                        </Button>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground">
+                      Esperando…
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+            </div>
+          )}
+        </Card>
+      )}
     </div>
   );
 }
@@ -912,6 +1178,7 @@ export default function LivePage() {
   const [tipo, setTipo] = useState("");
   const [talla, setTalla] = useState("");
   const [precio, setPrecio] = useState("");
+  const [regalo, setRegalo] = useState(false);
   const [historialPrecios, setHistorialPrecios] = useState<number[]>([
     85, 80, 120, 150,
   ]);
@@ -997,7 +1264,7 @@ export default function LivePage() {
   const formularioValido =
     codigoValido &&
     conjunto.trim().length > 0 &&
-    Number(precio) > 0;
+    (regalo || Number(precio) > 0);
 
   function agregarLive() {
     const limpio = nuevoLive.trim().replace(/^@/, "").toLowerCase();
@@ -1044,10 +1311,12 @@ export default function LivePage() {
       ].slice(0, 6),
     );
 
-    const monto = Number(precio);
-    setHistorialPrecios((prev) =>
-      [monto, ...prev.filter((valor) => valor !== monto)].slice(0, 6),
-    );
+    const monto = regalo ? 0 : Number(precio);
+    if (!regalo) {
+      setHistorialPrecios((prev) =>
+        [monto, ...prev.filter((valor) => valor !== monto)].slice(0, 6),
+      );
+    }
 
     agregarPedido({
       codigo,
@@ -1057,6 +1326,7 @@ export default function LivePage() {
       talla,
       total: monto,
       live: lives[liveActivo] ?? "",
+      regalo,
     });
 
     if (mensajePendiente && mensajePendiente.codigo === codigo) {
@@ -1074,7 +1344,7 @@ export default function LivePage() {
       conjunto.trim(),
       color.trim(),
       talla ? `Talla ${talla}` : "",
-      money.format(monto),
+      regalo ? "Regalo" : money.format(monto),
     ]
       .filter(Boolean)
       .join(" · ");
@@ -1096,6 +1366,7 @@ export default function LivePage() {
     setTipo("");
     setTalla("");
     setPrecio("");
+    setRegalo(false);
     setProductoSeleccionado(null);
     setRegistroAbierto(false);
   }
@@ -1501,25 +1772,61 @@ export default function LivePage() {
         )}
 
         <div className="space-y-2">
-          <Label htmlFor="precio">Precio</Label>
-          <div className="relative">
-            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-              S/
-            </span>
-            <Input
-              id="precio"
-              type="number"
-              min="1"
-              step="1"
-              inputMode="numeric"
-              value={precio}
-              onChange={(event) => {
-                setPrecio(event.target.value);
+          <div className="flex items-center justify-between gap-2">
+            <Label htmlFor="precio">Precio</Label>
+            {regalo && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
+                <Gift size={12} weight="Filled" />
+                Gratis
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                S/
+              </span>
+              <Input
+                id="precio"
+                type="number"
+                min="0"
+                step="1"
+                inputMode="numeric"
+                value={precio}
+                onChange={(event) => {
+                  setRegalo(false);
+                  setPrecio(event.target.value);
+                }}
+                placeholder="320"
+                className="h-10 pl-9"
+                disabled={regalo}
+                required
+              />
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={() => {
+                if (regalo) {
+                  setRegalo(false);
+                  setPrecio("");
+                } else {
+                  setRegalo(true);
+                  setPrecio("0");
+                }
               }}
-              placeholder="320"
-              className="h-10 pl-9"
-              required
-            />
+              aria-pressed={regalo}
+              aria-label={regalo ? "Quitar regalo" : "Marcar como regalo"}
+              title={regalo ? "Quitar regalo" : "Pedido de regalo"}
+              className={cn(
+                "size-10 shrink-0",
+                regalo &&
+                  "border-emerald-500/40 bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-400",
+              )}
+            >
+              <Gift size={17} weight={regalo ? "Filled" : "Outline"} />
+            </Button>
           </div>
           <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
             <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
@@ -1531,6 +1838,7 @@ export default function LivePage() {
                 key={valor}
                 type="button"
                 onClick={() => {
+                  setRegalo(false);
                   setPrecio(String(valor));
                 }}
                 className="rounded-full border border-border/70 bg-background px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -1762,7 +2070,13 @@ export default function LivePage() {
                     </p>
                   </TableCell>
                   <TableCell className="text-right text-xs tabular-nums">
-                    {money.format(pedido.total)}
+                    {pedido.regalo ? (
+                      <span className="font-semibold text-emerald-700 dark:text-emerald-400">
+                        Regalo
+                      </span>
+                    ) : (
+                      money.format(pedido.total)
+                    )}
                   </TableCell>
                   <TableCell className="pr-3">
                     <span

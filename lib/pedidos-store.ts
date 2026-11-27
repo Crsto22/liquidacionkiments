@@ -13,6 +13,7 @@ export type Pedido = {
   total: number;
   estado: EstadoPedido;
   live?: string;
+  regalo?: boolean;
 };
 
 const STORAGE_KEY = "kiments:pedidos";
@@ -132,6 +133,7 @@ export function agregarPedido(input: {
   talla: string;
   total: number;
   live?: string;
+  regalo?: boolean;
 }): Pedido {
   const actuales = getPedidos();
   const maximo = actuales.reduce(
@@ -158,6 +160,7 @@ export function agregarPedido(input: {
     total: input.total,
     estado: "Pendiente",
     live,
+    regalo: input.regalo || undefined,
   };
 
   const siguiente = [nuevo, ...actuales];
