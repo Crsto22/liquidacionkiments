@@ -349,13 +349,14 @@ type Ganador = {
 
 type DeteccionSorteo = {
   palabra: string;
-  ids: string[];
   ganadores: Ganador[];
 };
 
 type RondaSorteo = {
+  id: string;
   palabra: string;
   ganadores: Ganador[];
+  abierta: boolean;
 };
 
 const posicionesEstilos: Record<number, string> = {
@@ -364,11 +365,15 @@ const posicionesEstilos: Record<number, string> = {
   3: "bg-orange-600 text-white",
 };
 
-function detectarSorteos(mensajes: ChatMessage[]) {
+
+
+function detectarSorteos(
+  mensajes: ChatMessage[],
+  cortes: Map<string, number>,
+) {
   const porPalabra = new Map<
     string,
     {
-      ids: string[];
       mensajes: ChatMessage[];
       usuarios: Set<string>;
       gatillo: number;
@@ -381,14 +386,16 @@ function detectarSorteos(mensajes: ChatMessage[]) {
     const usuario = mensaje.user.trim().toLowerCase();
 
     for (const palabra of palabrasDeMensaje(mensaje.message)) {
+      const corte = cortes.get(palabra) ?? 0;
+      if (mensaje.creadoEn <= corte) continue;
+
       let registro = porPalabra.get(palabra);
 
       if (!registro) {
-        registro = { ids: [], mensajes: [], usuarios: new Set(), gatillo: -1 };
+        registro = { mensajes: [], usuarios: new Set(), gatillo: -1 };
         porPalabra.set(palabra, registro);
       }
 
-      registro.ids.push(mensaje.id);
       registro.mensajes.push(mensaje);
       registro.usuarios.add(usuario);
 
@@ -424,7 +431,7 @@ function detectarSorteos(mensajes: ChatMessage[]) {
         if (ganadores.length === 3) break;
       }
 
-      return { palabra, ids: registro.ids, ganadores };
+      return { palabra, ganadores };
     });
 }
 
@@ -435,6 +442,7 @@ type ChatMessage = {
   avatar?: string;
   message: string;
   time: string;
+  creadoEn: number;
 };
 
 type LiveMessage = {
@@ -519,104 +527,142 @@ function LiveChatPanel({
   const siguiendo = useRef(true);
   const bajando = useRef(false);
   const [mostrarIrAlFinal, setMostrarIrAlFinal] = useState(false);
-  const [ronda, setRonda] = useState<RondaSorteo | null>(null);
-  const [sorteoAbierto, setSorteoAbierto] = useState(true);
-  const rondaRef = useRef<RondaSorteo | null>(null);
-  const mostradasRef = useRef<Map<string, Set<string>>>(new Map());
-  const timerSorteo = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [rondas, setRondas] = useState<RondaSorteo[]>([]);
+  const rondasRef = useRef<RondaSorteo[]>([]);
+  const timersRondas = useRef<Map<string, ReturnType<typeof setTimeout>>>(
+    new Map(),
+  );
+  const cortesRef = useRef<Map<string, number>>(new Map());
   const mensajesRef = useRef<ChatMessage[]>([]);
 
-  const cerrarRonda = useCallback(() => {
-    if (timerSorteo.current) {
-      clearTimeout(timerSorteo.current);
-      timerSorteo.current = null;
-    }
-
-    rondaRef.current = null;
-    setRonda(null);
+  const actualizarRondas = useCallback((siguientes: RondaSorteo[]) => {
+    rondasRef.current = siguientes;
+    setRondas(siguientes);
   }, []);
+
+  const quitarRonda = useCallback(
+    (id: string) => {
+      const ronda = rondasRef.current.find((item) => item.id === id);
+
+      if (ronda) {
+        cortesRef.current.set(ronda.palabra, Date.now());
+      }
+
+      const timer = timersRondas.current.get(id);
+      if (timer) {
+        clearTimeout(timer);
+        timersRondas.current.delete(id);
+      }
+
+      const restantes = rondasRef.current.filter((item) => item.id !== id);
+
+      if (restantes.length > 0 && ronda?.abierta) {
+        restantes[restantes.length - 1] = {
+          ...restantes[restantes.length - 1],
+          abierta: true,
+        };
+      }
+
+      actualizarRondas(restantes);
+    },
+    [actualizarRondas],
+  );
 
   const mostrarRonda = useCallback(
     (deteccion: DeteccionSorteo) => {
-      cerrarRonda();
-
+      const id = crypto.randomUUID();
       const nueva: RondaSorteo = {
+        id,
         palabra: deteccion.palabra,
         ganadores: deteccion.ganadores.slice(0, 3),
+        abierta: true,
       };
 
-      rondaRef.current = nueva;
-      setRonda(nueva);
-      setSorteoAbierto(true);
-      mostradasRef.current.set(deteccion.palabra, new Set(deteccion.ids));
+      actualizarRondas([
+        ...rondasRef.current.map((ronda) => ({ ...ronda, abierta: false })),
+        nueva,
+      ]);
 
-      timerSorteo.current = setTimeout(() => {
-        rondaRef.current = null;
-        timerSorteo.current = null;
-        setRonda(null);
+      const timer = setTimeout(() => {
+        timersRondas.current.delete(id);
+        quitarRonda(id);
       }, 120_000);
+
+      timersRondas.current.set(id, timer);
     },
-    [cerrarRonda],
+    [actualizarRondas, quitarRonda],
+  );
+
+  const alternarRonda = useCallback(
+    (id: string) => {
+      actualizarRondas(
+        rondasRef.current.map((ronda) =>
+          ronda.id === id
+            ? { ...ronda, abierta: !ronda.abierta }
+            : ronda,
+        ),
+      );
+    },
+    [actualizarRondas],
+  );
+
+  const cerrarAcordeon = useCallback(
+    (id: string) => {
+      actualizarRondas(
+        rondasRef.current.map((ronda) =>
+          ronda.id === id ? { ...ronda, abierta: false } : ronda,
+        ),
+      );
+    },
+    [actualizarRondas],
   );
 
   const procesarSorteo = useCallback(
     (mensajes: ChatMessage[]) => {
-      const detecciones = detectarSorteos(mensajes);
-      const idsActuales = new Set(mensajes.map((mensaje) => mensaje.id));
+      const detecciones = detectarSorteos(mensajes, cortesRef.current);
+      const ultima = rondasRef.current[rondasRef.current.length - 1];
 
-      for (const [palabra, ids] of mostradasRef.current) {
-        let sigueEnChat = false;
-
-        for (const id of ids) {
-          if (idsActuales.has(id)) {
-            sigueEnChat = true;
-            break;
-          }
-        }
-
-        if (!sigueEnChat) mostradasRef.current.delete(palabra);
-      }
-
-      const actual = rondaRef.current;
-
-      if (actual) {
+      if (ultima) {
         const deteccionActual = detecciones.find(
-          (deteccion) => deteccion.palabra === actual.palabra,
+          (deteccion) => deteccion.palabra === ultima.palabra,
         );
 
         if (deteccionActual) {
           const nuevos = deteccionActual.ganadores.filter(
             (ganador) =>
-              !actual.ganadores.some(
+              !ultima.ganadores.some(
                 (existente) =>
                   existente.user.trim().toLowerCase() ===
                   ganador.user.trim().toLowerCase(),
               ),
           );
 
-          if (nuevos.length > 0 && actual.ganadores.length < 3) {
+          if (nuevos.length > 0 && ultima.ganadores.length < 3) {
             const actualizada: RondaSorteo = {
-              ...actual,
-              ganadores: [...actual.ganadores, ...nuevos].slice(0, 3),
+              ...ultima,
+              ganadores: [...ultima.ganadores, ...nuevos].slice(0, 3),
             };
 
-            rondaRef.current = actualizada;
-            setRonda(actualizada);
+            actualizarRondas([
+              ...rondasRef.current.slice(0, -1),
+              actualizada,
+            ]);
           }
         }
       }
 
-      const existente = rondaRef.current;
+      const palabrasActivas = new Set(
+        rondasRef.current.map((ronda) => ronda.palabra),
+      );
       const nueva = detecciones.find(
         (deteccion) =>
-          deteccion.palabra !== existente?.palabra &&
-          !mostradasRef.current.has(deteccion.palabra) &&
+          !palabrasActivas.has(deteccion.palabra) &&
           deteccion.ganadores.length > 0,
       );
 
       if (nueva) mostrarRonda(nueva);
     },
-    [mostrarRonda],
+    [actualizarRondas, mostrarRonda],
   );
 
   const agregarMensaje = useCallback(
@@ -630,8 +676,14 @@ function LiveChatPanel({
   );
 
   useEffect(() => {
+    const timers = timersRondas.current;
+
     return () => {
-      if (timerSorteo.current) clearTimeout(timerSorteo.current);
+      for (const timer of timers.values()) {
+        clearTimeout(timer);
+      }
+
+      timers.clear();
     };
   }, []);
 
@@ -654,6 +706,7 @@ function LiveChatPanel({
           avatar: data.avatar?.trim() || undefined,
           message: comment,
           time: data.time ?? "",
+          creadoEn: Date.now(),
         };
         agregarMensaje(nuevo);
       } catch {
@@ -743,8 +796,12 @@ function LiveChatPanel({
   function reconectar() {
     setMensajes([]);
     mensajesRef.current = [];
-    mostradasRef.current.clear();
-    cerrarRonda();
+    for (const timer of timersRondas.current.values()) {
+      clearTimeout(timer);
+    }
+    timersRondas.current.clear();
+    cortesRef.current.clear();
+    actualizarRondas([]);
     setErrorLive(null);
     setEstado("conectando");
     setIntento((value) => value + 1);
@@ -1028,138 +1085,148 @@ function LiveChatPanel({
         </Button>
       )}
 
-      {active && ronda && (
-        <Card className="absolute left-1/2 top-20 z-20 w-[calc(100%-1rem)] max-w-[360px] -translate-x-1/2 gap-0 overflow-hidden rounded-xl border border-border/60 bg-popover py-0 text-popover-foreground shadow-xl ring-0 animate-in fade-in slide-in-from-top-2 duration-200">
-          <div className="flex items-center gap-1 border-b px-2 py-1.5">
-            <button
-              type="button"
-              onClick={() => setSorteoAbierto((valor) => !valor)}
-              aria-expanded={sorteoAbierto}
-              className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 text-left transition-colors hover:bg-muted/60"
+      {active && rondas.length > 0 && (
+        <div className="absolute left-1/2 top-20 z-20 flex max-h-[calc(100%-6rem)] w-[calc(100%-1rem)] max-w-[360px] -translate-x-1/2 flex-col gap-2 overflow-y-auto overscroll-contain">
+          {rondas.map((sorteo) => (
+            <Card
+              key={sorteo.id}
+              className="gap-0 overflow-hidden rounded-xl border border-border/60 bg-popover py-0 text-popover-foreground shadow-xl ring-0 animate-in fade-in slide-in-from-top-2 duration-200"
             >
-              <p className="text-xs font-semibold">Ganadores</p>
-              <span className="truncate text-[11px] text-muted-foreground">
-                “{ronda.palabra}”
-              </span>
-              <ChevronDown
-                size={14}
-                className={cn(
-                  "ml-auto shrink-0 transition-transform duration-200",
-                  sorteoAbierto && "rotate-180",
-                )}
-              />
-            </button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              onClick={cerrarRonda}
-              aria-label="Cerrar sorteo"
-              title="Cerrar sorteo"
-              className="shrink-0"
-            >
-              <X size={14} />
-            </Button>
-          </div>
-
-          {sorteoAbierto && (
-            <div className="grid grid-cols-3 gap-2 p-3 animate-in fade-in duration-150">
-            {[0, 1, 2].map((indice) => {
-              const ganador = ronda.ganadores[indice];
-              const avatar = ganador ? colorAvatar(ganador.user) : null;
-
-              return (
-                <div
-                  key={indice}
-                  className="flex min-w-0 flex-col items-center gap-1.5 rounded-lg bg-[#f6f8f7] px-1.5 py-2 text-center dark:bg-zinc-900"
+              <div className="flex items-center gap-1 border-b px-2 py-1.5">
+                <button
+                  type="button"
+                  onClick={() => alternarRonda(sorteo.id)}
+                  aria-expanded={sorteo.abierta}
+                  className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 text-left transition-colors hover:bg-muted/60"
                 >
-                  <div className="relative mt-2">
-                    <span
-                      className={cn(
-                        "absolute -top-2 left-1/2 z-10 flex size-5 -translate-x-1/2 items-center justify-center rounded-full text-[10px] font-bold tabular-nums ring-2 ring-[#f6f8f7] dark:ring-zinc-900",
-                        posicionesEstilos[indice + 1],
-                      )}
-                    >
-                      {indice + 1}
-                    </span>
-
-                    {ganador ? (
-                      <div
-                        className={cn(
-                          "relative flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full text-[11px] font-semibold",
-                          avatar?.avatar,
-                        )}
-                      >
-                        {ganador.initials}
-                        {ganador.avatar && (
-                          <>
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={ganador.avatar}
-                              alt={ganador.user}
-                              loading="lazy"
-                              decoding="async"
-                              referrerPolicy="no-referrer"
-                              className="absolute inset-0 size-full object-cover"
-                              onError={(event) => {
-                                event.currentTarget.style.display = "none";
-                              }}
-                            />
-                          </>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="flex size-11 shrink-0 items-center justify-center rounded-full border border-dashed border-border text-[11px] text-muted-foreground">
-                        —
-                      </div>
+                  <p className="text-xs font-semibold">Ganadores</p>
+                  <span className="truncate text-[11px] text-muted-foreground">
+                    “{sorteo.palabra}”
+                  </span>
+                  <ChevronDown
+                    size={14}
+                    className={cn(
+                      "ml-auto shrink-0 transition-transform duration-200",
+                      sorteo.abierta && "rotate-180",
                     )}
-                  </div>
+                  />
+                </button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={() => quitarRonda(sorteo.id)}
+                  aria-label="Cerrar sorteo"
+                  title="Cerrar sorteo"
+                  className="shrink-0"
+                >
+                  <X size={14} />
+                </Button>
+              </div>
 
-                  {ganador ? (
-                    <>
-                      <p
-                        className={cn(
-                          "w-full truncate text-[11px] font-semibold",
-                          avatar?.text,
-                        )}
+              {sorteo.abierta && (
+                <div className="grid grid-cols-3 gap-2 p-3 animate-in fade-in duration-150">
+                  {[0, 1, 2].map((indice) => {
+                    const ganador = sorteo.ganadores[indice];
+                    const avatar = ganador
+                      ? colorAvatar(ganador.user)
+                      : null;
+
+                    return (
+                      <div
+                        key={indice}
+                        className="flex min-w-0 flex-col items-center gap-1.5 rounded-lg bg-[#f6f8f7] px-1.5 py-2 text-center dark:bg-zinc-900"
                       >
-                        {ganador.user}
-                      </p>
-                      <p className="font-mono text-[10px] tracking-widest text-muted-foreground">
-                        {ganador.codigo}
-                      </p>
-                      {mensajesRegistrados.includes(ganador.id) ? (
-                        <span className="mt-0.5 flex h-6 w-full items-center justify-center gap-1 rounded-md bg-emerald-500/10 text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
-                          <CheckCircle size={11} />
-                          Registrado
-                        </span>
-                      ) : (
-                        <Button
-                          type="button"
-                          size="xs"
-                          onClick={() => {
-                            onUsarCodigo(ganador.codigo, ganador.id);
-                            setSorteoAbierto(false);
-                          }}
-                          aria-label={`Registrar pedido de ${ganador.user}`}
-                          title="Registrar pedido"
-                          className="mt-0.5 w-full px-1 text-[10px]"
-                        >
-                          Registrar
-                        </Button>
-                      )}
-                    </>
-                  ) : (
-                    <p className="text-[11px] text-muted-foreground">
-                      Esperando…
-                    </p>
-                  )}
+                        <div className="relative mt-2">
+                          <span
+                            className={cn(
+                              "absolute -top-2 left-1/2 z-10 flex size-5 -translate-x-1/2 items-center justify-center rounded-full text-[10px] font-bold tabular-nums ring-2 ring-[#f6f8f7] dark:ring-zinc-900",
+                              posicionesEstilos[indice + 1],
+                            )}
+                          >
+                            {indice + 1}
+                          </span>
+
+                          {ganador ? (
+                            <div
+                              className={cn(
+                                "relative flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full text-[11px] font-semibold",
+                                avatar?.avatar,
+                              )}
+                            >
+                              {ganador.initials}
+                              {ganador.avatar && (
+                                <>
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={ganador.avatar}
+                                    alt={ganador.user}
+                                    loading="lazy"
+                                    decoding="async"
+                                    referrerPolicy="no-referrer"
+                                    className="absolute inset-0 size-full object-cover"
+                                    onError={(event) => {
+                                      event.currentTarget.style.display =
+                                        "none";
+                                    }}
+                                  />
+                                </>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="flex size-11 shrink-0 items-center justify-center rounded-full border border-dashed border-border text-[11px] text-muted-foreground">
+                              —
+                            </div>
+                          )}
+                        </div>
+
+                        {ganador ? (
+                          <>
+                            <p
+                              className={cn(
+                                "w-full truncate text-[11px] font-semibold",
+                                avatar?.text,
+                              )}
+                            >
+                              {ganador.user}
+                            </p>
+                            <p className="font-mono text-[10px] tracking-widest text-muted-foreground">
+                              {ganador.codigo}
+                            </p>
+                            {mensajesRegistrados.includes(ganador.id) ? (
+                              <span className="mt-0.5 flex h-6 w-full items-center justify-center gap-1 rounded-md bg-emerald-500/10 text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
+                                <CheckCircle size={11} />
+                                Registrado
+                              </span>
+                            ) : (
+                              <Button
+                                type="button"
+                                size="xs"
+                                onClick={() => {
+                                  onUsarCodigo(ganador.codigo, ganador.id);
+                                  cerrarAcordeon(sorteo.id);
+                                }}
+                                aria-label={`Registrar pedido de ${ganador.user}`}
+                                title="Registrar pedido"
+                                className="mt-0.5 w-full px-1 text-[10px]"
+                              >
+                                Registrar
+                              </Button>
+                            )}
+                          </>
+                        ) : (
+                          <p className="text-[11px] text-muted-foreground">
+                            Esperando…
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
-            </div>
-          )}
-        </Card>
+              )}
+            </Card>
+          ))}
+        </div>
       )}
     </div>
   );
